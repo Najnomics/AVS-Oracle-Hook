@@ -9,6 +9,7 @@ import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {Currency} from "v4-core/types/Currency.sol";
+import {IOracleAVS} from "./interfaces/IOracleAVS.sol";
 
 /**
  * @title AVSOracleHook
@@ -192,7 +193,7 @@ contract AVSOracleHook is BaseTestHooks {
         emit PriceValidationRequested(poolId, sender, uint256(params.amountSpecified), 0);
         
         // Get current consensus price from AVS
-        bool validationResult = _validateSwapPrice(poolId, params);
+        bool validationResult = _validateSwapPrice(poolId, params, sender);
         
         if (!validationResult) {
             // Block the swap due to price manipulation or consensus failure
@@ -282,40 +283,49 @@ contract AVSOracleHook is BaseTestHooks {
     
     function _validateSwapPrice(
         PoolId poolId,
-        IPoolManager.SwapParams calldata params
+        IPoolManager.SwapParams calldata params,
+        address sender
     ) internal returns (bool) {
-        // TODO: Request current price consensus from AVS
-        // For now, return true to allow swaps (will be connected to AVS later)
-        
-        ConsensusData storage consensus = poolConsensus[poolId];
         PoolOracleConfig memory config = poolConfigs[poolId];
         
-        // Mock consensus data for now
-        consensus.weightedPrice = 2105 * 1e18;  // $2,105 mock price
-        consensus.totalStake = 100 ether;
-        consensus.confidenceLevel = 8500;  // 85% confidence
-        consensus.lastUpdateTimestamp = block.timestamp;
-        consensus.isValid = true;
+        // Get current consensus from AVS
+        (bool hasConsensus, uint256 consensusPrice, uint256 totalStake, uint256 confidenceLevel, uint256 lastUpdateTimestamp) = 
+            IOracleAVS(oracleAVS).getCurrentConsensus(bytes32(uint256(PoolId.unwrap(poolId))));
         
-        // Basic validation logic
-        if (consensus.totalStake < config.minStakeRequired) {
-            emit SwapBlocked(poolId, msg.sender, 0, consensus.weightedPrice, "Insufficient stake");
+        // Update local consensus data
+        ConsensusData storage consensus = poolConsensus[poolId];
+        consensus.weightedPrice = consensusPrice;
+        consensus.totalStake = totalStake;
+        consensus.confidenceLevel = confidenceLevel;
+        consensus.lastUpdateTimestamp = lastUpdateTimestamp;
+        consensus.isValid = hasConsensus;
+        
+        // Check if consensus exists
+        if (!hasConsensus) {
+            emit SwapBlocked(poolId, sender, 0, consensusPrice, "No consensus");
             return false;
         }
         
-        if (consensus.confidenceLevel < config.consensusThreshold) {
-            emit SwapBlocked(poolId, msg.sender, 0, consensus.weightedPrice, "Low confidence");
+        // Check minimum stake requirement
+        if (totalStake < config.minStakeRequired) {
+            emit SwapBlocked(poolId, sender, 0, consensusPrice, "Insufficient stake");
+            return false;
+        }
+        
+        // Check confidence level
+        if (confidenceLevel < config.consensusThreshold) {
+            emit SwapBlocked(poolId, sender, 0, consensusPrice, "Low confidence");
             return false;
         }
         
         // Check staleness
-        if (block.timestamp - consensus.lastUpdateTimestamp > config.maxStaleness) {
-            emit SwapBlocked(poolId, msg.sender, 0, consensus.weightedPrice, "Stale data");
+        if (block.timestamp - lastUpdateTimestamp > config.maxStaleness) {
+            emit SwapBlocked(poolId, sender, 0, consensusPrice, "Stale data");
             return false;
         }
         
-        emit ConsensusReached(poolId, consensus.weightedPrice, consensus.totalStake, 
-            consensus.attestationCount, consensus.confidenceLevel);
+        emit ConsensusReached(poolId, consensusPrice, totalStake, 
+            consensus.attestationCount, confidenceLevel);
         
         return true;
     }

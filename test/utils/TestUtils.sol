@@ -160,7 +160,10 @@ library TestUtils {
      */
     function createTimestamps(uint256 count, uint256 intervalSeconds) internal view returns (uint256[] memory) {
         uint256[] memory timestamps = new uint256[](count);
-        uint256 baseTime = block.timestamp - (count * intervalSeconds);
+        uint256 totalInterval = count * intervalSeconds;
+        uint256 baseTime = block.timestamp > totalInterval ? 
+            block.timestamp - totalInterval : 
+            1000000; // Use a safe base time if underflow would occur
         
         for (uint256 i = 0; i < count; i++) {
             timestamps[i] = baseTime + (i * intervalSeconds);

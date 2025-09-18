@@ -52,13 +52,16 @@ contract PriceValidationTest is Test {
     }
     
     function test_ValidatePrice_StaleData() public {
+        // Set block timestamp to a known value
+        vm.warp(1000700); // Set current time
+        
         PriceValidation.ValidationParams memory params = PriceValidation.ValidationParams({
             currentPrice: BASE_PRICE,
             consensusPrice: BASE_PRICE,
             confidenceLevel: 8000,
             maxDeviationBps: 500,
             minConfidence: 6000,
-            timestamp: block.timestamp - 400, // 400 seconds ago
+            timestamp: 1000000, // 700 seconds ago, which exceeds max staleness of 300
             maxStaleness: 300 // 5 minutes max
         });
         
@@ -164,10 +167,14 @@ contract PriceValidationTest is Test {
         prices[1] = BASE_PRICE * 110 / 100;
         
         uint256[] memory timestamps = new uint256[](2);
-        timestamps[0] = block.timestamp - 60;
-        timestamps[1] = block.timestamp;
+        timestamps[0] = 1000000;
+        timestamps[1] = 1000060;
         
         vm.expectRevert("Insufficient data points");
+        this.callDetectManipulation(prices, timestamps);
+    }
+    
+    function callDetectManipulation(uint256[] memory prices, uint256[] memory timestamps) external {
         PriceValidation.detectManipulation(prices, timestamps);
     }
     
@@ -176,7 +183,7 @@ contract PriceValidationTest is Test {
         uint256[] memory timestamps = new uint256[](2);
         
         vm.expectRevert("Array length mismatch");
-        PriceValidation.detectManipulation(prices, timestamps);
+        this.callDetectManipulation(prices, timestamps);
     }
     
     /*//////////////////////////////////////////////////////////////
@@ -244,7 +251,7 @@ contract PriceValidationTest is Test {
         uint256[] memory weights = new uint256[](0);
         
         vm.expectRevert("No sources provided");
-        PriceValidation.validateMultipleSources(sources, weights);
+        this.callValidateMultipleSources(sources, weights);
     }
     
     function test_ValidateMultipleSources_MismatchedArrays() public {
@@ -252,6 +259,10 @@ contract PriceValidationTest is Test {
         uint256[] memory weights = new uint256[](2);
         
         vm.expectRevert("Array length mismatch");
+        this.callValidateMultipleSources(sources, weights);
+    }
+    
+    function callValidateMultipleSources(uint256[] memory sources, uint256[] memory weights) external {
         PriceValidation.validateMultipleSources(sources, weights);
     }
     
