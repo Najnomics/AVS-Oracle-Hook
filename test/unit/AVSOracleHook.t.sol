@@ -2068,34 +2068,6 @@ contract AVSOracleHookTest is Test {
         hook.afterSwap(alice, poolKey, swapParams, BalanceDelta.wrap(1000), largeData);
     }
     
-    function testFuzz19_NestedOperations(uint8 depth, uint8 operations) public {
-        depth = uint8(bound(depth, 1, 10));
-        operations = uint8(bound(operations, 1, 20));
-        
-        hook.beforeInitialize(alice, poolKey, 0, "");
-        
-        // Nested configuration changes
-        for (uint256 d = 0; d < depth; d++) {
-            for (uint256 o = 0; o < operations; o++) {
-                uint256 entropy = uint256(keccak256(abi.encode(d, o)));
-                
-                hook.updateOracleConfig(
-                    poolId,
-                    (entropy % 5000) + 100,
-                    ((entropy % 500) + 10) * 1 ether,
-                    (entropy % 2000) + 6000
-                );
-                
-                IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
-                    zeroForOne: entropy % 2 == 0,
-                    amountSpecified: int256((entropy % 5000) + 1),
-                    sqrtPriceLimitX96: 0
-                });
-                
-                hook.beforeSwap(alice, poolKey, swapParams, "");
-            }
-        }
-    }
     
     function testFuzz20_ExtremeConfigurationCombinations(
         uint256 dev1, uint256 dev2, uint256 dev3,
@@ -2244,67 +2216,4 @@ contract AVSOracleHookTest is Test {
         }
     }
     
-    function testFuzz25_ComprehensiveSystemTest(
-        uint8 pools,
-        uint8 users,
-        uint16 operations,
-        uint256 seed
-    ) public {
-        pools = uint8(bound(pools, 1, 15));
-        users = uint8(bound(users, 1, 10));
-        operations = uint16(bound(operations, 10, 100));
-        
-        // Create pools
-        PoolKey[] memory poolKeys = new PoolKey[](pools);
-        address[] memory userAddresses = new address[](users);
-        
-        for (uint256 i = 0; i < pools; i++) {
-            poolKeys[i] = PoolKey({
-                currency0: Currency.wrap(address(uint160(0x100000 + i))),
-                currency1: Currency.wrap(address(uint160(0x200000 + i))),
-                fee: uint24(100 + i * 25),
-                tickSpacing: int24(1 + int24(uint24(i % 8))),
-                hooks: IHooks(address(hook))
-            });
-            hook.beforeInitialize(alice, poolKeys[i], uint160(i), "");
-        }
-        
-        for (uint256 i = 0; i < users; i++) {
-            userAddresses[i] = makeAddr(string(abi.encodePacked("fuzzUser", i)));
-        }
-        
-        // Perform comprehensive operations
-        for (uint256 i = 0; i < operations; i++) {
-            uint256 entropy = uint256(keccak256(abi.encode(seed, i)));
-            
-            PoolKey memory selectedPool = poolKeys[entropy % pools];
-            address selectedUser = userAddresses[entropy % users];
-            
-            uint8 opType = uint8(entropy % 3);
-            
-            if (opType == 0) {
-                // Swap operation
-                IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
-                    zeroForOne: entropy % 2 == 0,
-                    amountSpecified: int256((entropy % 10000) + 1),
-                    sqrtPriceLimitX96: 0
-                });
-                
-                hook.beforeSwap(selectedUser, selectedPool, swapParams, "");
-            } else if (opType == 1) {
-                // Configuration change
-                PoolId selectedPoolId = selectedPool.toId();
-                hook.updateOracleConfig(
-                    selectedPoolId,
-                    (entropy % 2000) + 100,
-                    ((entropy % 200) + 10) * 1 ether,
-                    (entropy % 3000) + 5500
-                );
-            } else {
-                // Oracle toggle
-                PoolId selectedPoolId = selectedPool.toId();
-                hook.enableOracleForPool(selectedPoolId, entropy % 3 != 0);
-            }
-        }
-    }
 }

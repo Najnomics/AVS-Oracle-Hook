@@ -92,4 +92,24 @@ build/
 # Dependency directories
 #Foundry dependencies are managed via submodules
 
+# Development context (templates and examples)
 context/
+
+# Generated documentation
+docs/generated/
+
+# Test artifacts
+test-results/
+coverage-reports/
+
+# Deployment artifacts
+deployments/
+deployment-logs/
+
+# Security scan results
+security-reports/
+slither-results/
+
+# Performance benchmarks
+benchmark-results/
+gas-reports/

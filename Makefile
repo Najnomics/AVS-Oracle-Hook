@@ -1,11 +1,11 @@
-# EigenCrossCoW AVS Makefile
+# AVS Oracle Hook Makefile
 # Comprehensive build, test, and deployment automation
 
 .PHONY: help install build test clean deploy lint format security gas-report coverage
 
 # Default target
 help: ## Show this help message
-	@echo "EigenCrossCoW AVS - Available Commands:"
+	@echo "AVS Oracle Hook - Available Commands:"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
@@ -117,22 +117,33 @@ coverage: ## Generate coverage report
 	@echo "✅ Coverage report generated"
 
 # Deployment
-deploy: deploy-dev ## Deploy to development
+deploy: deploy-anvil ## Deploy to local Anvil (default)
 
-deploy-dev: ## Deploy to development
-	@echo "Deploying to development..."
-	forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast
-	@echo "✅ Development deployment completed"
+deploy-anvil: ## Deploy to local Anvil
+	@echo "Deploying to local Anvil..."
+	forge script script/DeployAnvil.s.sol --rpc-url http://localhost:8545 --broadcast
+	@echo "✅ Anvil deployment completed"
 
-deploy-staging: ## Deploy to staging
-	@echo "Deploying to staging..."
-	@echo "⚠️  Staging deployment not implemented yet"
-	@echo "✅ Staging deployment completed"
+deploy-testnet: ## Deploy to testnet
+	@echo "Deploying to testnet..."
+	forge script script/DeployTestnet.s.sol --rpc-url $${TESTNET_RPC_URL} --broadcast --verify
+	@echo "✅ Testnet deployment completed"
 
-deploy-prod: ## Deploy to production
-	@echo "Deploying to production..."
-	@echo "⚠️  Production deployment not implemented yet"
-	@echo "✅ Production deployment completed"
+deploy-mainnet: ## Deploy to mainnet
+	@echo "Deploying to mainnet..."
+	forge script script/Deploy.s.sol --rpc-url $${MAINNET_RPC_URL} --broadcast --verify
+	@echo "✅ Mainnet deployment completed"
+
+# Testing
+test-coverage: ## Run tests with coverage
+	@echo "Running tests with coverage..."
+	forge coverage --ir-minimum
+	@echo "✅ Coverage report generated"
+
+test-gas: ## Run gas optimization tests
+	@echo "Running gas optimization tests..."
+	forge test --gas-report
+	@echo "✅ Gas report generated"
 
 # Docker
 docker-build: ## Build Docker images
