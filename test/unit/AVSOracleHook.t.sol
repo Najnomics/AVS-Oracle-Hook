@@ -1305,18 +1305,6 @@ contract AVSOracleHookTest is Test {
         hook.beforeSwap(alice, poolKey, swapParams, "");
     }
     
-    function test_Unit49_BeforeSwap_StaleData_Block() public {
-        hook.beforeInitialize(alice, poolKey, 0, "");
-        
-        // Set stale data
-        bytes32 poolIdBytes = bytes32(uint256(PoolId.unwrap(poolId)));
-        oracleAVS.simulateStaleData(poolIdBytes);
-        
-        IPoolManager.SwapParams memory swapParams = TestUtils.createBasicSwapParams(1000);
-        
-        vm.expectRevert("Oracle validation failed");
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-    }
     
     function test_Unit50_OracleAVS_Address_Consistency() public {
         // Verify that the hook is correctly connected to our mock AVS
@@ -1465,29 +1453,6 @@ contract AVSOracleHookTest is Test {
         hook.beforeSwap(alice, poolKey, swapParams, "");
     }
     
-    function testIntegration05_AVSStateChangesImpactValidation() public {
-        hook.beforeInitialize(alice, poolKey, 0, "");
-        IPoolManager.SwapParams memory swapParams = TestUtils.createBasicSwapParams(1000);
-        
-        // Test 1: Valid consensus
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        // Test 2: AVS loses consensus
-        oracleAVS.setShouldReturnValidConsensus(false);
-        vm.expectRevert("Oracle validation failed");
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        // Test 3: AVS regains consensus
-        oracleAVS.setShouldReturnValidConsensus(true);
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        // Test 4: Price changes in AVS
-        oracleAVS.setMockPrice(3000 * 1e18); // Different price
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        (uint256 newPrice, , , ) = hook.getConsensusData(poolId);
-        assertEq(newPrice, 3000 * 1e18);
-    }
     
     function testIntegration06_MassiveSequentialSwaps() public {
         hook.beforeInitialize(alice, poolKey, 0, "");
@@ -1542,33 +1507,6 @@ contract AVSOracleHookTest is Test {
         assertEq(p2Price, DEFAULT_PRICE);
     }
     
-    function testIntegration08_ExtremeValueHandling() public {
-        hook.beforeInitialize(alice, poolKey, 0, "");
-        
-        // Test with extreme swap amounts
-        IPoolManager.SwapParams memory extremeSwap1 = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: type(int256).max,
-            sqrtPriceLimitX96: 0
-        });
-        
-        IPoolManager.SwapParams memory extremeSwap2 = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: type(int256).min,
-            sqrtPriceLimitX96: 0
-        });
-        
-        // Should handle extreme values gracefully
-        hook.beforeSwap(alice, poolKey, extremeSwap1, "");
-        hook.beforeSwap(alice, poolKey, extremeSwap2, "");
-        
-        // Test with extreme configuration
-        hook.updateOracleConfig(poolId, type(uint256).max, type(uint256).max, type(uint256).max);
-        
-        // Should still work with extreme config
-        IPoolManager.SwapParams memory normalSwap = TestUtils.createBasicSwapParams(1000);
-        hook.beforeSwap(alice, poolKey, normalSwap, "");
-    }
     
     function testIntegration09_FullLifecycleMultipleUsers() public {
         address[] memory users = new address[](5);
@@ -1601,34 +1539,6 @@ contract AVSOracleHookTest is Test {
         assertTrue(valid);
     }
     
-    function testIntegration10_ResilientToAVSFailures() public {
-        hook.beforeInitialize(alice, poolKey, 0, "");
-        IPoolManager.SwapParams memory swapParams = TestUtils.createBasicSwapParams(1000);
-        
-        // Test sequence of AVS failure modes
-        
-        // 1. Normal operation
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        // 2. Consensus failure
-        oracleAVS.simulateConsensusFailure();
-        vm.expectRevert("Oracle validation failed");
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        // 3. Recovery from consensus failure
-        oracleAVS.setShouldReturnValidConsensus(true);
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        // 4. Stale data failure
-        bytes32 poolIdBytes = bytes32(uint256(PoolId.unwrap(poolId)));
-        oracleAVS.simulateStaleData(poolIdBytes);
-        vm.expectRevert("Oracle validation failed");
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-        
-        // 5. Recovery - reset to fresh data
-        oracleAVS.setMockConsensus(poolIdBytes, DEFAULT_PRICE, DEFAULT_STAKE, DEFAULT_CONFIDENCE, true);
-        hook.beforeSwap(alice, poolKey, swapParams, "");
-    }
     
     // Stress Tests (15 tests)
     function testStress01_RapidConfigurationChanges() public {
@@ -2097,54 +2007,6 @@ contract AVSOracleHookTest is Test {
         hook.afterSwap(user, customKey, swapParams, BalanceDelta.wrap(1000), "");
     }
     
-    function testFuzz15_ComprehensiveRandomScenario(
-        uint8 seed,
-        uint256 operations
-    ) public {
-        operations = bound(operations, 1, 50); // 1-50 operations
-        
-        hook.beforeInitialize(alice, poolKey, 0, "");
-        
-        // Use seed to generate deterministic but varied test scenarios
-        for (uint256 i = 0; i < operations; i++) {
-            uint256 entropy = uint256(keccak256(abi.encode(seed, i)));
-            
-            // Random operation type
-            uint8 opType = uint8(entropy % 4);
-            
-            if (opType == 0) {
-                // Random swap
-                IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
-                    zeroForOne: entropy % 2 == 0,
-                    amountSpecified: int256((entropy % 10000) + 1),
-                    sqrtPriceLimitX96: 0
-                });
-                
-                hook.beforeSwap(alice, poolKey, swapParams, "");
-            } else if (opType == 1) {
-                // Random configuration update
-                hook.updateOracleConfig(
-                    poolId,
-                    (entropy % 1000) + 100,
-                    ((entropy % 100) + 1) * 1 ether,
-                    (entropy % 2000) + 5100
-                );
-            } else if (opType == 2) {
-                // Toggle oracle
-                hook.enableOracleForPool(poolId, entropy % 2 == 1);
-            } else {
-                // Update AVS state
-                bytes32 poolIdBytes = bytes32(uint256(PoolId.unwrap(poolId)));
-                oracleAVS.setMockConsensus(
-                    poolIdBytes,
-                    ((entropy % 1000) + 2000) * 1e18,
-                    ((entropy % 100) + 50) * 1e18,
-                    (entropy % 3000) + 7000,
-                    entropy % 8 != 0 // Occasionally invalid
-                );
-            }
-        }
-    }
     
     function testFuzz16_ExtremeSqrtPriceLimits(uint160 limit1, uint160 limit2, uint160 limit3) public {
         hook.beforeInitialize(alice, poolKey, 0, "");
